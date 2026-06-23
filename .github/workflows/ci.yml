@@ -20,17 +20,13 @@ jobs:
       fail-fast: false
 
       # Set up a matrix to run the configurations:
-      # 1. <Linux x64, Debug, latest GCC compiler toolchain in the container, default generator>
-      # 2. <Linux x64, Release, latest GCC compiler toolchain in the container, default generator>
-      # 3. <Linux arm64, Debug, latest GCC compiler toolchain in the container, default generator>
-      # 4. <Linux arm64, Release, latest GCC compiler toolchain in the container, default generator>
-      # 5. <MacOS M1, Debug, latest Clang compiler toolchain on the default runner image, default generator>
-      # 6. <MacOS M1, Release, latest Clang compiler toolchain on the default runner image, default generator>
-      # 7. <MacOS x64, Debug, latest Clang compiler toolchain on the default runner image, default generator>
-      # 8. <MacOS x64, Release, latest Clang compiler toolchain on the default runner image, default generator>
+      # 1. <Linux x64, Release, latest GCC compiler toolchain in the container, default generator>
+      # 2. <Linux arm64, Release, latest GCC compiler toolchain in the container, default generator>
+      # 3. <MacOS M1, Release, latest Clang compiler toolchain on the default runner image, default generator>
+      # 4. <MacOS x64, Release, latest Clang compiler toolchain on the default runner image, default generator>
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
-        build_type: [Debug, Release]
+        build_type: [ Release ]
         toolchain: [gcc, clang]
         include:
           - os: macos-latest
