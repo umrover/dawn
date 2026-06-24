@@ -1,0 +1,193 @@
+name: rover_release
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_hash:
+        description: 'Dawn commit hash (intended to be from dawn source repo, unless we have modified source code).'
+        required: true
+      custom_version:
+        description: 'Version tag (e.g., v1.2.3). Defaults to short commit hash.'
+        required: false
+        default: ''
+      custom_message:
+        description: 'Release notes'
+        required: false
+        default: 'Automated native desktop prebuilt binaries compilation for dawn.'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cmake:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+        build_type: [ Release ]
+        toolchain: [gcc, clang]
+        include:
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            toolchain: clang
+            c_compiler: clang
+            cpp_compiler: clang++
+            env:
+              MACOSX_DEPLOYMENT_TARGET: "12.0"
+            container: null
+          - os: macos-15-intel
+            platform: macos
+            arch: x64
+            toolchain: clang
+            c_compiler: clang
+            cpp_compiler: clang++
+            env:
+              MACOSX_DEPLOYMENT_TARGET: "12.0"
+            container: null
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            toolchain: gcc
+            c_compiler: gcc
+            cpp_compiler: g++
+            container: 
+              image: dockcross/manylinux_2_28-x64:latest
+              options: --volume /:/host
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            toolchain: gcc
+            c_compiler: gcc
+            cpp_compiler: g++
+            container: 
+              image: quay.io/pypa/manylinux_2_28_aarch64:latest
+              options: --volume /:/host
+        exclude:
+          - os: macos-latest
+            toolchain: gcc
+          - os: macos-15-intel
+            toolchain: gcc
+          - os: ubuntu-latest
+            toolchain: clang
+          - os: ubuntu-24.04-arm
+            toolchain: clang
+
+    name: CMake-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_hash }}
+
+      - name: Free disk space on Linux host
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
+        run: |
+          rm -rf /host/usr/share/dotnet
+          rm -rf /host/usr/local/lib/android
+          rm -rf /host/opt/ghc
+
+      - name: Set up dependencies on linux
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
+        run: >
+          dnf install -y mesa-libGL-devel libxcb libxcb-devel libX11-xcb libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXext-devel libxkbcommon libxkbcommon-devel libxkbcommon-x11-devel mesa-vulkan-drivers wayland-protocols-devel wayland-devel
+
+      - name: Set up sccache
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure CMake
+        run: >
+          cmake
+          -S .
+          -B out/${{ matrix.build_type }}
+          -C .github/workflows/dawn-ci.cmake
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build out/${{ matrix.build_type }} --config ${{ matrix.build_type }}
+
+      - name: Package
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TARGET_NAME="dawn-${{ matrix.platform }}-${{ matrix.arch }}-${SHORT_SHA}"
+          
+          cmake --install out/${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix "$TARGET_NAME"
+          cmake -E tar cvzf "${TARGET_NAME}.tar.gz" "$TARGET_NAME"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dawn-${{ matrix.platform }}-${{ matrix.arch }}
+          path: "*.tar.gz"
+
+  publish:
+    needs: [cmake]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_hash }}
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display Downloaded Files
+        run: |
+          ls -R artifacts
+
+      - name: Generate Release Version & Info
+        id: version_meta
+        run: |
+          if [ -n "${{ github.event.inputs.custom_version }}" ]; then
+            PKG_VERSION="${{ github.event.inputs.custom_version }}"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            PKG_VERSION="v${SHORT_SHA}"
+          fi
+          
+          echo "PKG_VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
+          
+          FULL_SHA=$(git rev-parse HEAD)
+          
+          # check if this commit hash actually corresponds to a commit upstream
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://dawn.googlesource.com/dawn/+/${FULL_SHA}?format=JSON")
+          
+          if [ "$STATUS_CODE" = "200" ]; then
+            SOURCE_LINE="* **Upstream Source Code Link:** <https://dawn.googlesource.com/dawn/+/${FULL_SHA}>"
+          else
+            SOURCE_LINE="* **Notice:** This release was built from a modified or forked rover code base and is not present in the upstream Dawn repository."
+          fi
+
+          cat << EOF > RELEASE_INFO.md
+          # ${PKG_VERSION}
+          
+          ${{ github.event.inputs.custom_message }}
+          
+          ---
+          * **Target Dawn Commit:** \`${FULL_SHA}\`
+          $SOURCE_LINE
+          * Provided as a best-effort service, not signed or officially guaranteed.
+          EOF
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_meta.outputs.PKG_VERSION }}
+          name: ${{ steps.version_meta.outputs.PKG_VERSION }}
+          body_path: RELEASE_INFO.md
+          files: |
+            artifacts/**/dawn-*.tar.gz
