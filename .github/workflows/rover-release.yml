@@ -89,6 +89,14 @@ jobs:
           ref: ${{ github.event.inputs.commit_hash }}
           submodules: false
 
+      - name: Configure Git Safe Directory
+        run: git config --global --add safe.directory '*'
+
+      - name: Get dawn-ci.cmake file
+        run: |
+          git fetch origin main --depth=1
+          git checkout origin/main -- .github/workflows/dawn-ci.cmake
+
       - name: Free disk space on Linux host
         if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
         run: |
@@ -105,14 +113,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
         uses: mozilla-actions/sccache-action@v0.0.5
 
-      - name: Configure Git Safe Directory
-        run: git config --global --add safe.directory '*'
-
       - name: Configure CMake
         run: >
           cmake
           -S .
           -B out/${{ matrix.build_type }}
+          -C .github/workflows/dawn-ci.cmake
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
           -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
