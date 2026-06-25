@@ -1,8 +1,8 @@
-name: rover_release
+name: rover_release_legacy
 
-# Release prebuilt Dawn binaries for a pinned commit (current, monolithic-capable Dawn).
-# Modern Dawn ships a self-contained libwebgpu_dawn.a + DawnConfig.cmake, so no lib bundling is needed.
-# For older Dawn without monolithic builds, use rover-release-legacy.yml.
+# Release prebuilt Dawn binaries for a pinned commit (legacy, pre-monolithic Dawn).
+# Such installs omit internal libs, so we bundle every static archive for group-linking.
+# For current Dawn, use rover-release.yml.
 
 on:
   workflow_dispatch:
@@ -134,8 +134,19 @@ jobs:
         run: |
           TARGET_NAME="Dawn-${{ matrix.platform }}-${{ matrix.arch }}"
 
-          # Monolithic Dawn: install is already self-contained.
           cmake --install out/${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix "$TARGET_NAME"
+
+          # Pre-monolithic install omits internal libs; bundle every static archive (flattened names avoid clashes).
+          BUILD_DIR="out/${{ matrix.build_type }}"
+          LIBDIR="$TARGET_NAME/lib"
+          mkdir -p "$LIBDIR"
+          while IFS= read -r a; do
+            rel="${a#${BUILD_DIR}/}"
+            cp "$a" "$LIBDIR/${rel//\//_}"
+          done < <(find "$BUILD_DIR" -type f -name '*.a' \
+            ! -name 'libglfw3.a' ! -name '*gtest*' ! -name '*gmock*' ! -name '*googletest*')
+          echo "Bundled $(ls -1 "$LIBDIR"/*.a | wc -l) static libs:"; ls -1 "$LIBDIR"/*.a | sed 's#.*/##'
+
           cmake -E tar cvzf "${TARGET_NAME}.tar.gz" "$TARGET_NAME"
 
       - name: Upload artifacts
