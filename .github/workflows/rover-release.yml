@@ -43,7 +43,7 @@ jobs:
           #   container: null
           # - os: macos-15-intel
           #   platform: macos
-          #   arch: x64
+          #   arch: x86_64
           #   toolchain: clang
           #   c_compiler: clang
           #   cpp_compiler: clang++
@@ -52,7 +52,7 @@ jobs:
           #   container: null
           - os: ubuntu-latest
             platform: linux
-            arch: x64
+            arch: x86_64
             toolchain: gcc
             c_compiler: gcc
             cpp_compiler: g++
@@ -131,16 +131,31 @@ jobs:
 
       - name: Package
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          TARGET_NAME="dawn-${{ matrix.platform }}-${{ matrix.arch }}-${SHORT_SHA}"
-          
+          TARGET_NAME="Dawn-${{ matrix.platform }}-${{ matrix.arch }}"
+
+          # Install public headers + libs.
           cmake --install out/${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix "$TARGET_NAME"
+
+          # This revision predates DAWN_BUILD_MONOLITHIC_LIBRARY, so the install
+          # omits internal libs (dawn_common, tint, spirv-tools, abseil) and the
+          # result is unlinkable. Bundle every static archive (flattened names
+          # avoid basename clashes; consumers link by full path).
+          BUILD_DIR="out/${{ matrix.build_type }}"
+          LIBDIR="$TARGET_NAME/lib"
+          mkdir -p "$LIBDIR"
+          while IFS= read -r a; do
+            rel="${a#${BUILD_DIR}/}"
+            cp "$a" "$LIBDIR/${rel//\//_}"
+          done < <(find "$BUILD_DIR" -type f -name '*.a' \
+            ! -name 'libglfw3.a' ! -name '*gtest*' ! -name '*gmock*' ! -name '*googletest*')
+          echo "Bundled $(ls -1 "$LIBDIR"/*.a | wc -l) static libs:"; ls -1 "$LIBDIR"/*.a | sed 's#.*/##'
+
           cmake -E tar cvzf "${TARGET_NAME}.tar.gz" "$TARGET_NAME"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dawn-${{ matrix.platform }}-${{ matrix.arch }}
+          name: Dawn-${{ matrix.platform }}-${{ matrix.arch }}
           path: "*.tar.gz"
 
   publish:
@@ -164,16 +179,16 @@ jobs:
       - name: Generate Release Version & Info
         id: version_meta
         run: |
+          FULL_SHA=$(git rev-parse HEAD)
+
+          # Tag is the full upstream Dawn commit (overridable via custom_version).
           if [ -n "${{ github.event.inputs.custom_version }}" ]; then
             PKG_VERSION="${{ github.event.inputs.custom_version }}"
           else
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            PKG_VERSION="v${SHORT_SHA}"
+            PKG_VERSION="v${FULL_SHA}"
           fi
-          
+
           echo "PKG_VERSION=$PKG_VERSION" >> $GITHUB_OUTPUT
-          
-          FULL_SHA=$(git rev-parse HEAD)
           
           # check if this commit hash actually corresponds to a commit upstream
           STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://dawn.googlesource.com/dawn/+/${FULL_SHA}?format=JSON")
@@ -202,4 +217,4 @@ jobs:
           name: ${{ steps.version_meta.outputs.PKG_VERSION }}
           body_path: RELEASE_INFO.md
           files: |
-            artifacts/**/dawn-*.tar.gz
+            artifacts/**/Dawn-*.tar.gz
