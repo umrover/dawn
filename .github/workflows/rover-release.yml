@@ -130,6 +130,7 @@ jobs:
         run: cmake --build out/${{ matrix.build_type }} --config ${{ matrix.build_type }}
 
       - name: Package
+        shell: bash
         run: |
           TARGET_NAME="Dawn-${{ matrix.platform }}-${{ matrix.arch }}"
 
