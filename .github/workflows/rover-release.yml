@@ -167,14 +167,12 @@ jobs:
           FULL_SHA=$(git rev-parse HEAD)
           SHORT_SHA=${FULL_SHA:0:8}
 
-          PLATFORMS=$(find artifacts -name 'Dawn-*.tar.gz' -printf '%f\n' | sed -E 's/^Dawn-(.+)\.tar\.gz$/\1/' | sort -u | paste -sd ', ')
-
           if [ -n "${{ github.event.inputs.custom_version }}" ]; then
             TAG="${{ github.event.inputs.custom_version }}"
             RELEASE_NAME="$TAG"
           else
             TAG="v${FULL_SHA}"
-            RELEASE_NAME="Dawn binaries for ${PLATFORMS} (${SHORT_SHA})"
+            RELEASE_NAME="Dawn version ${SHORT_SHA}"
           fi
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_OUTPUT
@@ -187,7 +185,7 @@ jobs:
           fi
 
           cat << EOF > RELEASE_INFO.md
-          Prebuilt Dawn binaries for ${PLATFORMS}, built from commit \`${SHORT_SHA}\`.
+          Prebuilt Dawn binaries, built from commit \`${SHORT_SHA}\`.
 
           - Full commit: \`${FULL_SHA}\`
           - ${SOURCE_LINE}
