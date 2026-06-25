@@ -27,29 +27,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
-        os: [ubuntu-latest, ubuntu-24.04-arm]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
         build_type: [ Release ]
         toolchain: [gcc, clang]
         include:
-          # - os: macos-latest
-          #   platform: macos
-          #   arch: arm64
-          #   toolchain: clang
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   env:
-          #     MACOSX_DEPLOYMENT_TARGET: "12.0"
-          #   container: null
-          # - os: macos-15-intel
-          #   platform: macos
-          #   arch: x86_64
-          #   toolchain: clang
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   env:
-          #     MACOSX_DEPLOYMENT_TARGET: "12.0"
-          #   container: null
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            toolchain: clang
+            c_compiler: clang
+            cpp_compiler: clang++
+            env:
+              MACOSX_DEPLOYMENT_TARGET: "12.0"
+            container: null
+          - os: macos-15-intel
+            platform: macos
+            arch: x86_64
+            toolchain: clang
+            c_compiler: clang
+            cpp_compiler: clang++
+            env:
+              MACOSX_DEPLOYMENT_TARGET: "12.0"
+            container: null
           - os: ubuntu-latest
             platform: linux
             arch: x86_64
